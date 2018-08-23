@@ -334,163 +334,191 @@ static void wait_slave_cpus(unsigned ncpu)
 // ~SMP
 
 // C entry point
-extern "C" int main()
+extern "C"
+int
+main()
 {
-	unsigned ncpu = intc_ncpu(Cfg_krn_intc_paddr);
-	if (Proc::cpuid())
-		slave_cpu(ncpu);
+  unsigned ncpu = intc_ncpu(Cfg_krn_intc_paddr);
 
-	init_bss();
-	uart_init(Cfg_ldr_uart_paddr, Cfg_ldr_uart_bitrate, Cfg_sys_clock_hz);
-	init_io();
-	call_ctors();
+  if (Proc::cpuid())
+    slave_cpu(ncpu);
 
-	// print banner
-	printf("\n\r");
-	printf("[ldr]   _    _ ___ __  __   ___  ___ \n");
-	printf("[ldr]  | |  | | _ \\  \\/  | / _ \\/ __|\n");
-	printf("[ldr]  | |/\\| |   / |\\/| || (_) \\__ \\\n");
-	printf("[ldr]  |__/\\__|_|_\\_|  |_(_)___/|___/\n");
-	printf("[ldr]          From Russia with love!\n");
-	printf("[ldr]\n");
+  init_bss();
+  uart_init(Cfg_ldr_uart_paddr,
+	    Cfg_ldr_uart_bitrate,
+	    Cfg_sys_clock_hz);
+  init_io();
+  call_ctors();
 
-	printf("[ldr]  cpu #%u/%u ready, sp=0x%lx.\n", Proc::cpuid(), ncpu, Proc::sp());
-	if (ncpu > Cfg_max_cpus)
-		panic("cpu ncpu=%u exceeds project parameter Cfg_max_cpus=%u.\n", ncpu, Cfg_max_cpus);
+  // print banner
+  printf("\n\r");
+  printf("[ldr]   _    _ ___ __  __   ___  ___ \n");
+  printf("[ldr]  | |  | | _ \\  \\/  | / _ \\/ __|\n");
+  printf("[ldr]  | |/\\| |   / |\\/| || (_) \\__ \\\n");
+  printf("[ldr]  |__/\\__|_|_\\_|  |_(_)___/|___/\n");
+  printf("[ldr]          From Russia with love!\n");
+  printf("[ldr]\n");
 
-	// resume slave CPUs and wait for them
-	set_inter_cpu_flag(Inter_cpu_io_ready);
-	wait_slave_cpus(ncpu);
+  printf("[ldr]  cpu #%u/%u ready, sp=0x%lx.\n", Proc::cpuid(), ncpu, Proc::sp());
+  if (ncpu > Cfg_max_cpus)
+    panic("cpu ncpu=%u exceeds project parameter Cfg_max_cpus=%u.\n",
+	  ncpu,
+	  Cfg_max_cpus);
 
-	// print system info
-	printf("[ldr]\n");
-	printf("[ldr]  hello:   %s  %s.\n", __TIME__, __DATE__);
-	printf("[ldr]  gccver:  %u.%u.%u.\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
-	printf("[ldr]  hware:   %s, %s, %s, %s.\n", macro2str(Cfg_arch), macro2str(Cfg_cpu), macro2str(Cfg_plat), macro2str(Cfg_brd));
-	printf("[ldr]  ram:     [0x%08x - 0x%08x)  %6u MB.\n", Cfg_ram_start, Cfg_ram_start + Cfg_ram_sz, b2mb(Cfg_ram_sz));
+  // resume slave CPUs and wait for them
+  set_inter_cpu_flag(Inter_cpu_io_ready);
+  wait_slave_cpus(ncpu);
 
-	addr_t ramfs_addr;
-	size_t ramfs_sz;
-	get_ramfs(&ramfs_addr, &ramfs_sz);
-	printf("[ldr]  ramfs:   [0x%08lx - 0x%08lx)  %6u KB.\n", ramfs_addr, ramfs_addr + ramfs_sz, b2kb(ramfs_sz));
-	sections.push_back(Section_t((addr_t)ramfs_addr, ramfs_sz, Mem_desc_t::Bldr_ramfs));
+  // print system info
+  printf("[ldr]\n");
+  printf("[ldr]  hello:   %s  %s.\n",
+	 __TIME__,
+	 __DATE__);
+  printf("[ldr]  gccver:  %u.%u.%u.\n",
+	 __GNUC__,
+	 __GNUC_MINOR__,
+	 __GNUC_PATCHLEVEL__);
+  printf("[ldr]  hware:   %s, %s, %s, %s.\n",
+	 macro2str(Cfg_arch),
+	 macro2str(Cfg_cpu),
+	 macro2str(Cfg_plat),
+	 macro2str(Cfg_brd));
+  printf("[ldr]  ram:     [0x%08x - 0x%08x)  %6u MB.\n",
+	 Cfg_ram_start,
+	 Cfg_ram_start + Cfg_ram_sz,
+	 b2mb(Cfg_ram_sz));
 
-	// search files - kernel, sigma0, roottask
+  addr_t ramfs_addr;
+  size_t ramfs_sz;
+  get_ramfs(&ramfs_addr, &ramfs_sz);
+  printf("[ldr]  ramfs:   [0x%08lx - 0x%08lx)  %6u KB.\n", ramfs_addr, ramfs_addr + ramfs_sz, b2kb(ramfs_sz));
+  sections.push_back(Section_t((addr_t)ramfs_addr, ramfs_sz, Mem_desc_t::Bldr_ramfs));
 
-	const Ramfs_file_header_t* kernel_file = 0;
-	const Ramfs_file_header_t* sigma0_file = 0;
-	const Ramfs_file_header_t* roottask_file = 0;
-	Ramfs_file_header_t* file = (Ramfs_file_header_t*) ramfs_addr;
-	unsigned cnt = 1;
-	printf("[ldr]  ##  name                    data      size  content\n");
-	do
+  // search files - kernel, sigma0, roottask
+
+  const Ramfs_file_header_t* kernel_file = 0;
+  const Ramfs_file_header_t* sigma0_file = 0;
+  const Ramfs_file_header_t* roottask_file = 0;
+  Ramfs_file_header_t* file = (Ramfs_file_header_t*) ramfs_addr;
+  unsigned cnt = 1;
+  printf("[ldr]  ##  name                    data      size  content\n");
+  do
+    {
+      if (!strcmp(file->name, "kernel.elf"))
+	kernel_file = file;
+      else
+	if (!strcmp(file->name, "sigma0.elf"))
+	  sigma0_file = file;
+	else
+	  if (!strcmp(file->name, "roottask.elf"))
+	    roottask_file = file;
+
+      printf("[ldr]  %2u  %-16s  0x%08lx  %8u  '%.8s ...'\n",
+	     cnt,
+	     file->name,
+	     (addr_t)file->data,
+	     file->size,
+	     (char*)file->data);
+
+      assert((addr_t)file->data >= ramfs_addr  &&
+	     ((addr_t)file->data + file->size) < (ramfs_addr + ramfs_sz));
+
+      cnt++;
+    } while ((file = ramfs_next(file)));
+  printf("[ldr]\n");
+
+  // check search result
+
+  if (!kernel_file || !sigma0_file || !roottask_file)
+    {
+      const char* exist = "exists";
+      const char* absent = "is absent (!)";
+      printf("[ldr]  ERROR:  could not find loadable files:  kernel %s, sigma0 %s, roottask %s.\n",
+	     kernel_file ? exist : absent, sigma0_file ? exist : absent, roottask_file ? exist : absent);
+      while(1);
+    }
+
+  // debug dump
+  /*
+    elf_dump(kernel_file->data, kernel_file->size, dprint_elf);
+    printf("\n");
+    elf_dump(sigma0_file->data, sigma0_file->size, dprint_elf);
+    printf("\n");
+    elf_dump(roottask_file->data, roottask_file->size, dprint_elf);
+    printf("\n");
+  */
+
+  // get section information for sigma0 and roottask (section headers)
+  // accumulate all memory regions to 'regions' (program headers)
+
+  int rc = elf_foreach(kernel_file->data, kernel_file->size, Elf_no_shdr_func,
+		       process_elf_phdr, (addr_t)"kernel", 0, dprint_elf);
+  if (rc)
+    panic("[ldr]  wrong kernel.elf, rc=%d.\n", rc);
+
+  rc = elf_foreach(sigma0_file->data, sigma0_file->size, process_elf_shdr,
+		   process_elf_phdr, (addr_t)"sigma0", 0, dprint_elf);
+  if (rc)
+    panic("[ldr]  wrong sigma0.elf, rc=%d\n", rc);
+
+  rc = elf_foreach(roottask_file->data, roottask_file->size, process_elf_shdr,
+		   process_elf_phdr, (addr_t)"roottask", 0, dprint_elf);
+  if (rc)
+    panic("[ldr]  wrong roottask.elf, rc=%d.\n", rc);
+
+  add_bootloader_to_regions();
+  add_free_mem_to_regions();
+
+  // check overlaps
+
+  dprint("[ldr]  memory regions:\n");
+  for (Regions_t::citer_t it=regions.cbegin(); it!=regions.cend(); ++it)
+    {
+      dprint("[ldr]    [%08lx - %08lx)  sz=0x%08zx,  %s.\n",
+	     it->start, it->start + it->sz, it->sz, it->owner);
+    }
+
+  for (Regions_t::citer_t it=regions.cbegin(); (it+1)!=regions.cend(); ++it)
+    {
+      if (it->end() > (it+1)->start)
 	{
-		if (!strcmp(file->name, "kernel.elf"))
-			kernel_file = file;
-		else
-		if (!strcmp(file->name, "sigma0.elf"))
-			sigma0_file = file;
-		else
-		if (!strcmp(file->name, "roottask.elf"))
-			roottask_file = file;
-
-		printf("[ldr]  %2u  %-16s  0x%08lx  %8u  '%.8s ...'\n",
-			cnt, file->name, (addr_t)file->data, file->size, (char*)file->data);
-
-		assert((addr_t)file->data >= ramfs_addr  &&
-			((addr_t)file->data + file->size) < (ramfs_addr + ramfs_sz));
-
-		cnt++;
-	} while ((file = ramfs_next(file)));
-	printf("[ldr]\n");
-
-	// check search result
-
-	if (!kernel_file || !sigma0_file || !roottask_file)
-	{
-		const char* exist = "exists";
-		const char* absent = "is absent (!)";
-		printf("[ldr]  ERROR:  could not find loadable files:  kernel %s, sigma0 %s, roottask %s.\n",
-			kernel_file ? exist : absent, sigma0_file ? exist : absent, roottask_file ? exist : absent);
-		while(1);
+	  panic("ldr:  %s [%lx-%lx) overlaps with %s [%lx - %lx).\n",
+		it->owner, it->start,  it->start + it->sz,
+		(it+1)->owner, (it+1)->start,  (it+1)->start + (it+1)->sz);
 	}
+    }
 
-	// debug dump
-	/*
-	elf_dump(kernel_file->data, kernel_file->size, dprint_elf);
-	printf("\n");
-	elf_dump(sigma0_file->data, sigma0_file->size, dprint_elf);
-	printf("\n");
-	elf_dump(roottask_file->data, roottask_file->size, dprint_elf);
-	printf("\n");
-	*/
+  // load ELFs to memory
 
-	// get section information for sigma0 and roottask (section headers)
-	// accumulate all memory regions to 'regions' (program headers)
+  addr_t kernel_entry = 0;
+  addr_t sigma0_entry = 0;
+  addr_t roottask_entry = 0;
 
-	int rc = elf_foreach(kernel_file->data, kernel_file->size, Elf_no_shdr_func,
-	                     process_elf_phdr, (addr_t)"kernel", 0, dprint_elf);
-	if (rc)
-		panic("[ldr]  wrong kernel.elf, rc=%d.\n", rc);
+  rc = elf_foreach (kernel_file->data,
+		    kernel_file->size, 0,
+		    load_elf_phdr, 0,
+		    &kernel_entry,
+		    dprint_elf);
+  if (rc)
+    panic("[ldr]  elf_load(kernel.elf) - rc=%d.\n", rc);
 
-	rc = elf_foreach(sigma0_file->data, sigma0_file->size, process_elf_shdr,
-	                 process_elf_phdr, (addr_t)"sigma0", 0, dprint_elf);
-	if (rc)
-		panic("[ldr]  wrong sigma0.elf, rc=%d\n", rc);
+  rc = elf_foreach(sigma0_file->data, sigma0_file->size, 0, load_elf_phdr, 0, &sigma0_entry, dprint_elf);
+  if (rc)
+    panic("[ldr]  elf_load(sigma0.elf) - rc=%d.\n", rc);
 
-	rc = elf_foreach(roottask_file->data, roottask_file->size, process_elf_shdr,
-	                 process_elf_phdr, (addr_t)"roottask", 0, dprint_elf);
-	if (rc)
-		panic("[ldr]  wrong roottask.elf, rc=%d.\n", rc);
+  rc = elf_foreach(roottask_file->data, roottask_file->size, 0, load_elf_phdr, 0, &roottask_entry, dprint_elf);
+  if (rc)
+    panic("[ldr]  elf_load(roottask.elf) - rc=%d.\n", rc);
 
-	add_bootloader_to_regions();
-	add_free_mem_to_regions();
+  init_kip(sigma0_entry, roottask_entry);
 
-	// check overlaps
+  printf("[ldr]  Go to kernel.\n\n");
 
-	dprint("[ldr]  memory regions:\n");
-	for (Regions_t::citer_t it=regions.cbegin(); it!=regions.cend(); ++it)
-	{
-		dprint("[ldr]    [%08lx - %08lx)  sz=0x%08zx,  %s.\n", it->start, it->start + it->sz, it->sz, it->owner);
-	}
+  kernel_entry_point = kernel_entry;
+  set_inter_cpu_flag(Inter_cpu_init_done);
 
-	for (Regions_t::citer_t it=regions.cbegin(); (it+1)!=regions.cend(); ++it)
-	{
-		if (it->end() > (it+1)->start)
-		{
-			panic("ldr:  %s [%lx-%lx) overlaps with %s [%lx - %lx).\n",
-				it->owner, it->start,  it->start + it->sz,
-				(it+1)->owner, (it+1)->start,  (it+1)->start + (it+1)->sz);
-		}
-	}
+  typedef void(*func_t)(void);
+  ((func_t)kernel_entry)();
 
-	// load ELFs to memory
-
-	addr_t kernel_entry = 0;
-	addr_t sigma0_entry = 0;
-	addr_t roottask_entry = 0;
-
-	rc = elf_foreach(kernel_file->data, kernel_file->size, 0, load_elf_phdr, 0, &kernel_entry, dprint_elf);
-	if (rc)
-		panic("[ldr]  elf_load(kernel.elf) - rc=%d.\n", rc);
-
-	rc = elf_foreach(sigma0_file->data, sigma0_file->size, 0, load_elf_phdr, 0, &sigma0_entry, dprint_elf);
-	if (rc)
-		panic("[ldr]  elf_load(sigma0.elf) - rc=%d.\n", rc);
-
-	rc = elf_foreach(roottask_file->data, roottask_file->size, 0, load_elf_phdr, 0, &roottask_entry, dprint_elf);
-	if (rc)
-		panic("[ldr]  elf_load(roottask.elf) - rc=%d.\n", rc);
-
-	init_kip(sigma0_entry, roottask_entry);
-
-	printf("[ldr]  Go to kernel.\n\n");
-
-	kernel_entry_point = kernel_entry;
-	set_inter_cpu_flag(Inter_cpu_init_done);
-
-	typedef void(*func_t)(void);
-	((func_t)kernel_entry)();
-
-	return 0;
+  return 0;
 }
